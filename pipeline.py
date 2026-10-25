@@ -2,7 +2,6 @@ import psycopg2
 import csv
 from datetime import date
 
-# Database connection parameters
 DB_PARAMS = {
     "dbname": "your_db",
     "user": "your_user",
@@ -27,7 +26,6 @@ def generate_sample_data(filename):
 def setup_database(cursor):
     """Creates tables, range partitions, and indexes."""
     
-    # 1. Dimension Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS dim_customer (
             customer_id INT PRIMARY KEY,
@@ -36,7 +34,6 @@ def setup_database(cursor):
         );
     """)
 
-    # 2. Range Partitioned Fact Table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fact_sales (
             sale_id INT,
@@ -46,7 +43,6 @@ def setup_database(cursor):
         ) PARTITION BY RANGE (sale_date);
     """)
 
-    # Create Partitions
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS fact_sales_2024_01 
         PARTITION OF fact_sales FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
@@ -55,7 +51,6 @@ def setup_database(cursor):
         PARTITION OF fact_sales FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
     """)
 
-    # 3. Composite and Partial Indexes
     cursor.execute("""
         -- Composite Index: Optimizes queries filtering by both customer and date
         CREATE INDEX IF NOT EXISTS idx_comp_cust_date 
@@ -66,7 +61,6 @@ def setup_database(cursor):
         ON fact_sales (amount) WHERE amount > 1000.00;
     """)
 
-    # Staging Table for Bulk Load
     cursor.execute("""
         CREATE TEMP TABLE stg_sales (
             sale_id INT,
@@ -89,14 +83,10 @@ def run_pipeline():
     try:
         setup_database(cursor)
 
-        # 4. COPY Bulk Load
-        # Load raw CSV data directly into the staging table efficiently
         with open(csv_file, 'r') as f:
             cursor.copy_expert("COPY stg_sales FROM STDIN WITH CSV", f)
         print("Bulk load (COPY) completed.")
 
-        # 5. MERGE on Dimension Table (SCD Type 1)
-        # Update existing customers or insert new ones
         cursor.execute("""
             MERGE INTO dim_customer AS target
             USING (SELECT DISTINCT customer_id, customer_name FROM stg_sales) AS source
@@ -109,8 +99,7 @@ def run_pipeline():
         """)
         print("MERGE on dimension table completed.")
 
-        # 6. Load into Fact Table
-        # Data will automatically route to the correct partition based on sale_date
+      
         cursor.execute("""
             INSERT INTO fact_sales (sale_id, customer_id, sale_date, amount)
             SELECT sale_id, customer_id, sale_date, amount
